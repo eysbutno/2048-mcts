@@ -11,23 +11,29 @@ struct board {
         LEFT, RIGHT, UP, DOWN
     };
 
-    static std::mt19937 rng;
-
     std::array<std::array<int, 4>, 4> grid;
     int score;
     int open;
 
     board() : grid(), score(0), open(16) {}
 
+    /**
+     * @return a random value in the range [0, bound], provided bound >= 0
+     */
+    inline int get_rand(int bound) const {
+        thread_local static std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
+        return std::uniform_int_distribution<int>(0, bound)(rng);
+    }
+
     std::pair<int, int> gen_tile() const {
         assert(open > 0);
-        int pos = std::uniform_int_distribution<int>(0, open - 1)(rng);
+        int pos = get_rand(open - 1);
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
                 if (grid[i][j] > 0) continue;
 
                 if (pos == 0) {
-                    int v = std::uniform_int_distribution<int>(0, 9)(rng);
+                    int v = get_rand(9);
                     if (v <= 8) {
                         return std::make_pair(i * 4 + j, 2);
                     } else {
@@ -122,5 +128,3 @@ struct board {
         open--;
     }
 };
-
-std::mt19937 board::rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};

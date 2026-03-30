@@ -3,7 +3,7 @@
 #include <cmath>
 
 struct node {
-    static constexpr double C = 1.41;
+    static constexpr double C = 0.3;
     static constexpr double INF = 1e9;
 
     long double q;
@@ -13,7 +13,7 @@ struct node {
     std::vector<std::unique_ptr<node>> ch;
     node* par;
 
-    node() : q(0), n(0), is_chance(false), move(-1), ch(), par(nullptr) {}
+    node() : q(0), n(0), is_chance(true), move(-1), ch(), par(nullptr) {}
 
     node(bool _is_chance, int _move, node* _par) 
         : q(0), n(0), is_chance(_is_chance), move(_move), ch(), par(_par) {
@@ -22,6 +22,10 @@ struct node {
         } else {
             ch.reserve(4);
         }
+    }
+
+    void add_ch(bool is_chance, int move) {
+        ch.push_back(std::make_unique<node>(is_chance, move, this));
     }
 
     long double value() const {

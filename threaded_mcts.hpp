@@ -1,17 +1,25 @@
 #include "board.hpp"
-#include "node.hpp"
+#include "threaded_node.hpp"
+#include "thread_pool.h"
 #include <chrono>
 #include <algorithm>
 
-struct mcts {
+struct threaded_mcts {
     static constexpr int MAX_SCORE = 3'932'100;
 
-    std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
-    std::unique_ptr<node> root;
+    std::unique_ptr<threaded_node> root;
     board state;
     int num_rollouts;
+    thread_pool tasks;
 
-    mcts() : root(std::make_unique<node>()), state(), num_rollouts(0) {
+    threaded_mcts() : root(std::make_unique<threaded_node>()), state(), 
+                      num_rollouts(0), tasks() {
+        state.add_tile(state.gen_tile());
+        state.add_tile(state.gen_tile());
+    }
+
+    threaded_mcts(size_t num_threads) 
+        : root(std::make_unique<threaded_node>()), state(), num_rollouts(0), tasks(num_threads) {
         state.add_tile(state.gen_tile());
         state.add_tile(state.gen_tile());
     }
@@ -20,6 +28,7 @@ struct mcts {
      * @return a random value in the range [0, bound], provided bound >= 0
      */
     inline int get_rand(int bound) {
+        thread_local static std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
         return std::uniform_int_distribution<int>(0, bound)(rng);
     }
 
@@ -28,17 +37,17 @@ struct mcts {
     }
 
     /**
-     * @return a selected node (based on UCT), with its respective board state.
+     * @return a selected threaded_node (based on UCT), with its respective board state.
      */
-    std::pair<node*, board> select() {
-        node* cur = root.get();
+    std::pair<threaded_node*, board> select() {
+        threaded_node* cur = root.get();
         auto b = state;
 
-        while (!(cur->ch).empty()) {
+        while (cur->has_ch()) {
             if (cur->is_chance) {
-                // transition to a decision node
+                // transition to a decision threaded_node
                 auto nxt = (*std::max_element(cur->ch.begin(), cur->ch.end(), 
-                    [](const auto &x, const auto &y) -> bool {
+                    [](auto &x, auto &y) -> bool {
                     return x->value() < y->value();
                 })).get();
 
@@ -57,18 +66,28 @@ struct mcts {
                     }
                 }
             }
+
+            // we use virtual loss to avoid reexploring
+            cur->upd(-1);
         }
 
         return std::make_pair(cur, b);
     }
 
-    std::pair<node*, board> expand(node* cur, const board &b) {
-        if (b.open == 0) {
+    std::pair<threaded_node*, board> expand(threaded_node* cur, const board &b) {
+        if (b.open == 0 || cur->has_ch()) {
+            return std::make_pair(cur, b);
+        }
+
+        std::lock_guard lock(cur->mtx);
+
+        if (cur->has_ch()) {
+            // double check in case lol
             return std::make_pair(cur, b);
         }
 
         if (cur->is_chance) {
-            // transition to a decision node
+            // transition to a decision threaded_node
             for (int i = 0; i < 4; i++) {
                 auto nxt = b;
                 if (nxt.play_move((board::directions) i)) {
@@ -76,9 +95,10 @@ struct mcts {
                 }
             }
 
-            node* chosen = cur->ch[get_rand((cur->ch).size() - 1)].get();
+            threaded_node* chosen = cur->ch[get_rand((cur->ch).size() - 1)].get();
             board nxt_b = b;
             nxt_b.play_move((board::directions) chosen->move);
+
             return std::make_pair(chosen, nxt_b);
         } else {
             // transition to a randomly generated tile
@@ -97,8 +117,10 @@ struct mcts {
             int hash = add.first * 4 + add.second / 2;
             nxt_b.add_tile(add);
 
-            for (const auto &nxt : (cur->ch)) {
+            for (auto &nxt : (cur->ch)) {
                 if (nxt->move == hash) {
+                    // apply virtual loss
+                    nxt->upd(-1);
                     return std::make_pair(nxt.get(), nxt_b);
                 }
             }
@@ -111,7 +133,7 @@ struct mcts {
     double rollout(board b, bool is_chance) {
         while (b.open > 0) {
             if (is_chance) {
-                // transition to a decision node
+                // transition to a decision threaded_node
                 int seen = 0;
                 for (int i = 0; i < 4; i++) {
                     auto nxt = b;
@@ -145,35 +167,14 @@ struct mcts {
     }
 
     /**
-     * Backpropogates res to all parent nodes. 
+     * Backpropogates res to all parent threaded_nodes. 
      * Because of perspective switch, we need to
      * alternate values properly.
      */
-    void backprop(node* cur, long double res) {
+    void backprop(threaded_node* cur, long double res) {
         while (cur != nullptr) {
-            cur->n++;
-            cur->q += res;
+            cur->upd(res + 1); // +1 is to undo virtual loss
             cur = cur->par;
-        }
-    }
-
-    /**
-     * Searches the game tree by repeating each of the 4 steps.
-     * NOTE: Because of std::unique_ptr, each run may take longer (use arena/similar to fix)
-     * 
-     * @param tl_ms time limit in ms
-     */
-    void search_tl(int tl_ms) {
-        using clock = std::chrono::steady_clock;
-
-        auto deadline = clock::now() + std::chrono::milliseconds(tl_ms);
-
-        num_rollouts = 0;
-        while (clock::now() < deadline) {
-            auto [cur, b] = select();
-            std::tie(cur, b) = expand(cur, b);
-            backprop(cur, rollout(b, cur->is_chance));
-            num_rollouts++;
         }
     }
 
@@ -184,11 +185,19 @@ struct mcts {
      */
     void search_rollouts(int max_rollouts) {
         num_rollouts = 0;
+        std::vector<std::future<void>> wait;
         while (num_rollouts < max_rollouts) {
-            auto [cur, b] = select();
-            std::tie(cur, b) = expand(cur, b);
-            backprop(cur, rollout(b, cur->is_chance));
+            wait.push_back(tasks.submit([&]() -> void {
+                auto [cur, b] = select();
+                std::tie(cur, b) = expand(cur, b);
+                backprop(cur, rollout(b, cur->is_chance));
+            }));
+            
             num_rollouts++;
+        }
+
+        for (auto &i : wait) {
+            i.get();
         }
     }
 
