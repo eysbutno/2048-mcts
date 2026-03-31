@@ -63,15 +63,14 @@ struct mcts {
     }
 
     std::pair<node*, board> expand(node* cur, const board &b) {
-        if (b.open == 0) {
+        if (b.terminal()) {
             return std::make_pair(cur, b);
         }
 
         if (cur->is_chance) {
             // transition to a decision node
             for (int i = 0; i < 4; i++) {
-                auto nxt = b;
-                if (nxt.play_move((board::directions) i)) {
+                if (b.can_play((board::directions) i)) {
                     cur->add_ch(false, i);
                 }
             }
@@ -109,13 +108,12 @@ struct mcts {
     }
 
     double rollout(board b, bool is_chance) {
-        while (b.open > 0) {
+        while (!b.terminal()) {
             if (is_chance) {
                 // transition to a decision node
                 int seen = 0;
                 for (int i = 0; i < 4; i++) {
-                    auto nxt = b;
-                    if (nxt.play_move((board::directions) i)) {
+                    if (b.can_play((board::directions) i)) {
                         seen++;
                     }
                 }
@@ -124,9 +122,11 @@ struct mcts {
                 seen = get_rand(seen - 1);
                 for (int i = 0; i < 4; i++) {
                     auto nxt = b;
-                    if (nxt.play_move((board::directions) i)) {
+                    if (b.can_play((board::directions) i)) {
                         if (seen == 0) {
-                            b = nxt;
+                            auto nxt = b;
+                            nxt.play_move((board::directions) i);
+                            b = std::move(nxt);
                             break;
                         }
 
@@ -196,13 +196,16 @@ struct mcts {
         assert(root->is_chance);
         return (*std::max_element(root->ch.begin(), root->ch.end(), 
             [](const auto &x, const auto &y) -> bool {
-            return (x->q / x->n) < (y->q / y->n);
+            return x->q / x->n < y->q / y->n;
         }))->move;
     }
 
     void play_move(int dir) {
         assert(root->is_chance);
-        state.play_move((board::directions) dir);
+        assert(state.can_play((board::directions) dir));
+        bool played = state.play_move((board::directions) dir);
+        assert(played);
+
         for (auto &nxt : root->ch) {
             if (nxt->move == dir) {
                 auto nxt_root = std::move(nxt);
@@ -229,5 +232,7 @@ struct mcts {
                 return;
             }
         }
+
+        assert(false);
     }
 };

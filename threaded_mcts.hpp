@@ -6,6 +6,7 @@
 
 struct threaded_mcts {
     static constexpr int MAX_SCORE = 3'932'100;
+    static constexpr long double VLOSS = 0.0001;
 
     std::unique_ptr<threaded_node> root;
     board state;
@@ -68,7 +69,7 @@ struct threaded_mcts {
             }
 
             // we use virtual loss to avoid reexploring
-            cur->upd(-1);
+            cur->upd(-VLOSS);
         }
 
         return std::make_pair(cur, b);
@@ -81,7 +82,7 @@ struct threaded_mcts {
 
         std::lock_guard lock(cur->mtx);
 
-        if (cur->has_ch()) {
+        if (cur->has_ch_ul()) {
             // double check in case lol
             return std::make_pair(cur, b);
         }
@@ -130,7 +131,7 @@ struct threaded_mcts {
         return std::make_pair(cur, b);
     }
 
-    double rollout(board b, bool is_chance) {
+    long double rollout(board b, bool is_chance) {
         while (b.open > 0) {
             if (is_chance) {
                 // transition to a decision threaded_node
@@ -163,7 +164,7 @@ struct threaded_mcts {
             is_chance = !is_chance;
         }
 
-        return (double) b.score / MAX_SCORE;
+        return (long double) b.score / MAX_SCORE;
     }
 
     /**
@@ -173,7 +174,7 @@ struct threaded_mcts {
      */
     void backprop(threaded_node* cur, long double res) {
         while (cur != nullptr) {
-            cur->upd(res + 1); // +1 is to undo virtual loss
+            cur->upd(res + VLOSS, 0); // +1 is to undo virtual loss, 0 since +1 trials alr added
             cur = cur->par;
         }
     }
@@ -186,6 +187,7 @@ struct threaded_mcts {
     void search_rollouts(int max_rollouts) {
         num_rollouts = 0;
         std::vector<std::future<void>> wait;
+        wait.reserve(max_rollouts);
         while (num_rollouts < max_rollouts) {
             wait.push_back(tasks.submit([&]() -> void {
                 auto [cur, b] = select();
@@ -205,7 +207,7 @@ struct threaded_mcts {
         assert(root->is_chance);
         return (*std::max_element(root->ch.begin(), root->ch.end(), 
             [](const auto &x, const auto &y) -> bool {
-            return (x->q / x->n) < (y->q / y->n);
+            return x->n < y->n;
         }))->move;
     }
 
