@@ -1,4 +1,4 @@
-#include "board.hpp"
+#include "bitboard.hpp"
 #include "node.hpp"
 #include <chrono>
 #include <algorithm>
@@ -8,34 +8,22 @@ struct mcts {
 
     std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
     std::unique_ptr<node> root;
-    board state;
+    bitboard state;
     int num_rollouts;
 
-    mcts() : root(std::make_unique<node>()), state(), num_rollouts(0) {
-        state.add_tile(state.gen_tile());
-        state.add_tile(state.gen_tile());
-    }
+    mcts() : root(std::make_unique<node>()), state(), num_rollouts(0) {}
 
-    mcts(int max_rollouts) : root(std::make_unique<node>()), state(), num_rollouts(0) {
-        state.add_tile(state.gen_tile());
-        state.add_tile(state.gen_tile());
-    }
+    mcts(int max_rollouts) : root(std::make_unique<node>()), state(), num_rollouts(0) {}
 
-    /**
-     * @return a random value in the range [0, bound], provided bound >= 0
-     */
-    inline int get_rand(int bound) {
-        return std::uniform_int_distribution<int>(0, bound)(rng);
-    }
-
-    inline int tile_hash(const std::pair<int, int> &t) {
-        return t.first * 4 + t.second / 2;
+    int get_rand(int bound) {
+        assert(bound > 0);
+        return std::uniform_int_distribution<int>(0, bound - 1)(rng);
     }
 
     /**
      * @return a selected node (based on UCT), with its respective board state.
      */
-    std::pair<node*, board> select() {
+    std::pair<node*, bitboard> select() {
         node* cur = root.get();
         auto b = state;
 
@@ -47,16 +35,15 @@ struct mcts {
                     return x->value() < y->value();
                 })).get();
 
-                b.play_move((board::directions) nxt->move);
+                b.play_move((bitboard::directions) nxt->move);
                 cur = nxt;
             } else {
                 // transition to a randomly generated tile
                 const auto add = b.gen_tile();
-                int hash = tile_hash(add);
-                b.add_tile(add);
+                b.play_tile(add);
 
-                for (const auto &nxt : (cur->ch)) {
-                    if (nxt->move == hash) {
+                for (const auto &nxt : cur->ch) {
+                    if (nxt->move == add) {
                         cur = nxt.get();
                         break;
                     }
@@ -67,7 +54,7 @@ struct mcts {
         return std::make_pair(cur, b);
     }
 
-    std::pair<node*, board> expand(node* cur, const board &b) {
+    std::pair<node*, bitboard> expand(node* cur, bitboard b) {
         if (b.terminal()) {
             return std::make_pair(cur, b);
         }
@@ -75,35 +62,34 @@ struct mcts {
         if (cur->is_chance) {
             // transition to a decision node
             for (int i = 0; i < 4; i++) {
-                if (b.can_play((board::directions) i)) {
+                auto nxt = b;
+                if (nxt.play_move((bitboard::directions) i)) {
                     cur->add_ch(false, i);
                 }
             }
 
-            node* chosen = cur->ch[get_rand((cur->ch).size() - 1)].get();
-            board nxt_b = b;
-            nxt_b.play_move((board::directions) chosen->move);
+            node* chosen = cur->ch[get_rand((cur->ch).size())].get();
+            bitboard nxt_b = b;
+            nxt_b.play_move((bitboard::directions) chosen->move);
             return std::make_pair(chosen, nxt_b);
         } else {
             // transition to a randomly generated tile
             for (int i = 0; i < 4; i++) {
                 for (int j = 0; j < 4; j++) {
-                    if (b.grid[i][j] == 0) {
-                        for (int v : {2, 4}) {
-                            cur->add_ch(true, (i * 4 + j) * 4 + v / 2);
-                        }
+                    if (b.at(i, j) == 0) {
+                        cur->add_ch(true, bitboard::tile_repr(i, j, 1));
+                        cur->add_ch(true, bitboard::tile_repr(i, j, 2));
                     }
                 }
             }
 
-            board nxt_b = b;
-            const std::pair<int, int> add = nxt_b.gen_tile();
-            int hash = add.first * 4 + add.second / 2;
-            nxt_b.add_tile(add);
 
-            for (const auto &nxt : (cur->ch)) {
-                if (nxt->move == hash) {
-                    return std::make_pair(nxt.get(), nxt_b);
+            const auto add = b.gen_tile();
+            b.play_tile(add);
+
+            for (const auto &nxt : cur->ch) {
+                if (nxt->move == add) {
+                    return std::make_pair(nxt.get(), b);
                 }
             }
         }
@@ -112,41 +98,20 @@ struct mcts {
         return std::make_pair(cur, b);
     }
 
-    double rollout(board b, bool is_chance) {
+    long double rollout(bitboard b, bool is_chance) {
         while (!b.terminal()) {
             if (is_chance) {
                 // transition to a decision node
-                int seen = 0;
-                for (int i = 0; i < 4; i++) {
-                    if (b.can_play((board::directions) i)) {
-                        seen++;
-                    }
-                }
-                
-                assert(seen > 0);
-                seen = get_rand(seen - 1);
-                for (int i = 0; i < 4; i++) {
-                    auto nxt = b;
-                    if (b.can_play((board::directions) i)) {
-                        if (seen == 0) {
-                            auto nxt = b;
-                            nxt.play_move((board::directions) i);
-                            b = std::move(nxt);
-                            break;
-                        }
-
-                        seen--;
-                    }
-                }
+                b.play_move(b.gen_move());
             } else {
                 // transition to a randomly generated tile
-                b.add_tile(b.gen_tile());
+                b.play_tile(b.gen_tile());
             }
 
             is_chance = !is_chance;
         }
 
-        return (double) b.score / MAX_SCORE;
+        return (long double) b.score / MAX_SCORE;
     }
 
     /**
@@ -207,8 +172,11 @@ struct mcts {
 
     void play_move(int dir) {
         assert(root->is_chance);
-        assert(state.can_play((board::directions) dir));
-        bool played = state.play_move((board::directions) dir);
+        if (root->ch.empty()) {
+            expand(root.get(), state);
+        }
+
+        bool played = state.play_move((bitboard::directions) dir);
         assert(played);
 
         for (auto &nxt : root->ch) {
@@ -221,16 +189,15 @@ struct mcts {
         }
     }
 
-    void add_tile(const std::pair<int, int> &t) {
+    void play_tile(bitboard::board_t add) {
         assert(!root->is_chance);
         if (root->ch.empty()) {
             expand(root.get(), state);
         }
 
-        state.add_tile(t);
-        int hash = tile_hash(t);
+        state.play_tile(add);
         for (auto &nxt : root->ch) {
-            if (nxt->move == hash) {
+            if (nxt->move == add) {
                 auto nxt_root = std::move(nxt);
                 nxt_root->par = nullptr;
                 root = std::move(nxt_root);

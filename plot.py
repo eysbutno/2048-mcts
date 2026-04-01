@@ -40,8 +40,8 @@ from matplotlib.gridspec import GridSpec
 # ── Configuration ─────────────────────────────────────────────────────────────
  
 EXECUTABLE   = "./run.exe"          # path to compiled binary
-ROLLOUT_COUNTS = [100, 250, 500, 1000, 2500, 5000, 7500]  # rollouts to benchmark
-RUNS_PER_LEVEL = 50                     # games per rollout count
+ROLLOUT_COUNTS = [100, 250, 500, 1000]  # rollouts to benchmark
+RUNS_PER_LEVEL = 10                     # games per rollout count
 TIMEOUT_SEC    = 600                   # kill a run after this many seconds
  
 # ── Parsing ────────────────────────────────────────────────────────────────────

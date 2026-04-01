@@ -1,6 +1,5 @@
-#include "board.hpp"
+#include "bitboard.hpp"
 #include "mcts.hpp"
-#include "threaded_mcts.hpp"
 #include <iostream>
 #include <chrono>
 
@@ -14,11 +13,11 @@ int main(int argc, char* argv[]) {
     while (!solver.state.terminal()) {
         if (is_chance) {
             solver.search_rollouts(rollouts);
-            board::directions move = (board::directions) solver.best_move();
+            bitboard::directions move = (bitboard::directions) solver.best_move();
             solver.play_move(move);
             moves++;
         } else {
-            solver.add_tile(solver.state.gen_tile());
+            solver.play_tile(solver.state.gen_tile());
         }
 
         is_chance = !is_chance;
@@ -32,7 +31,7 @@ int main(int argc, char* argv[]) {
 
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
-            std::cout << solver.state.grid[i][j] << ' ';
+            std::cout << (1 << solver.state.at(i, j)) << ' ';
         }
         
         std::cout << "\n";

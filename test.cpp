@@ -1,4 +1,3 @@
-#include "board.hpp"
 #include "mcts.hpp"
 #include <iostream>
 #include <chrono>
@@ -7,26 +6,16 @@ int main() {
     mcts solver{};
     bool is_chance = true;
 
-    /*
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            std::cout << solver.state.grid[i][j] << ' ';
-        }
-        
-        std::cout << "\n";
-    }
-    */
-
     int moves = 0;
     auto start = std::chrono::steady_clock::now();
     while (!solver.state.terminal()) {
         if (is_chance) {
-            solver.search_rollouts(250);
-            board::directions move = (board::directions) solver.best_move();
+            solver.search_rollouts(1000);
+            bitboard::directions move = (bitboard::directions) solver.best_move();
             solver.play_move(move);
             moves++;
         } else {
-            solver.add_tile(solver.state.gen_tile());
+            solver.play_tile(solver.state.gen_tile());
         }
 
         is_chance = !is_chance;
@@ -40,7 +29,7 @@ int main() {
 
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
-            std::cout << solver.state.grid[i][j] << ' ';
+            std::cout << solver.state.at(i, j) << ' ';
         }
         
         std::cout << "\n";
