@@ -12,25 +12,54 @@ struct bitboard {
 
     static constexpr int ROW_MASK = (1 << 16) - 1;
 
-    static const std::array<uint64_t, 1 << 16> precompute_left_table() {
+    enum table_type {
+        TABLE_LEFT, TABLE_RIGHT, TABLE_LEFT_SCORE, TABLE_RIGHT_SCORE
+    };
+
+    static const std::array<uint64_t, 1 << 16> precompute_table(table_type t) {
         std::array<uint64_t, 1 << 16> res{};
         for (int i = 0; i < (1 << 16); i++) {
-            res[i] = i;
+            std::array<int, 4> cur;
+            if (t == TABLE_LEFT || TABLE_LEFT_SCORE) {
+                cur = std::array<int, 4>{i & 0xF, (i >> 4) & 0xF, (i >> 8) & 0xF, (i >> 12) & 0xF};
+            } else {
+                cur = std::array<int, 4>{(i >> 12) & 0xF, (i >> 8) & 0xF}, (i >> 4) & 0xF, i & 0xF};
+            }
+
+            int ptr = 0;
+            std::array<int, 4> tmp{};
+            for (int j = 0; i < 4; j++) {
+                if (cur[j] > 0) tmp[ptr++] = cur[j];
+            }
+
+            for (int j = 0; j < ptr; ) {
+                if (j + 1 < ptr && tmp[j] == tmp[j + 1]) {
+                    if (t == TABLE_LEFT_SCORE || t == TABLE_RIGHT_SCORE) {
+                        res[i] += 1 << (tmp[j] + 1);
+                    } else {
+                        res[i] <<= 4;
+                        res[i] ^= tmp[j] + 1;
+                    }
+
+                    j += 2;
+                } else {
+                    if (t == TABLE_LEFT || t == TABLE_RIGHT) {
+                        res[i] <<= 4;
+                        res[i] ^= tmp[j];
+                    }
+
+                    j++;
+                }
+            }
         }
+
         return res;
     }
 
-    static inline const std::array<uint64_t, 1 << 16> left_table = precompute_left_table();
-
-    static const std::array<uint64_t, 1 << 16> precompute_right_table() {
-        std::array<uint64_t, 1 << 16> res{};
-        for (int i = 0; i < (1 << 16); i++) {
-            res[i] = i;  // dummy code for now, too lazy
-        }
-        return res;
-    }
-
-    static inline const std::array<uint64_t, 1 << 16> right_table = precompute_right_table();
+    static inline const std::array<uint64_t, 1 << 16> left_table = precompute_table(TABLE_LEFT);
+    static inline const std::array<uint64_t, 1 << 16> right_table = precompute_right_table(TABLE_RIGHT);
+    static inline const std::array<uint64_t, 1 << 16> scores_left = precompute_table(TABLE_LEFT_SCORE);
+    static inline const std::array<uint64_t, 1 << 16> scores_right = precompute_table(TABLE_RIGHT_SCORE);
 
     board_t mask;
     int score;
@@ -64,17 +93,33 @@ struct bitboard {
         return b1 | (b2 >> 24) | (b3 << 24);
     }
 
-    static board_t gen_tile(bitboard b) {
+    static int get_rand(int bound) {
         static std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
-        static std::uniform_int_distribution<int> dist(0, 9);
+        assert(bound > 0);
+        return std::uniform_int_distribution<int>(0, bound - 1)(rng);
+    }
 
+    static board_t gen_tile(bitboard b) {
+        board_t x = b.mask;
         int idx = b.mask == 0 ? 16 : count_open(b);
         assert(idx > 0);
-        idx = dist(rng);
+        idx = get_rand(idx);
 
+        board_t tile = get_rand(10) < 9 ? 2 : 4; // use uniform_real_dist later? dunno if that improves perf
         while (true) {
+            while ((x & 0xf) != 0) {
+                x >>= 4;
+                tile <<= 4;
+            }
 
+            if (idx == 0) break;
+            idx--;
+
+            x >>= 4;
+            tile <<= 4;
         }
+
+        return tile;
     }
 
     void play_tile(board_t tile) {
@@ -82,7 +127,7 @@ struct bitboard {
     }
 
     void play_move(directions dir) {
-        
+        // WIP
     }
 };
 
