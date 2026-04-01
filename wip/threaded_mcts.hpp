@@ -1,4 +1,4 @@
-#include "board.hpp"
+#include "../board.hpp"
 #include "threaded_node.hpp"
 #include "thread_pool.h"
 #include <chrono>

@@ -51,40 +51,6 @@ struct board {
     }
 
     /**
-     * Performs a merge to the left, in the same way as traditional 2048.
-     * @param line the line of values in question
-     * @param moved reference to store if any movement has been made
-     * @return number of merges that happened
-     */
-    int merge_line(std::array<int, 4> &line, bool &moved) {
-        std::array<int, 4> tmp{};
-        int count = 0;
-        for (int i = 0; i < 4; i++) {
-            if (line[i]) tmp[count++] = line[i];
-        }
-
-        moved |= tmp != line;
- 
-        std::array<int, 4> result{};
-        int merges = 0;
-        int ptr = 0;
-        for (int i = 0; i < count; ) {
-            if (i + 1 < count && tmp[i] == tmp[i + 1]) {
-                result[ptr++] = tmp[i] * 2;
-                score += tmp[i] * 2;
-                merges++;
-                i += 2;
-                moved = true;
-            } else {
-                result[ptr++] = tmp[i++];
-            }
-        }
- 
-        line = std::move(result);
-        return merges;
-    }
-
-    /**
      * Checks if we can play this move and have it do anything.
      * @param direction in question
      */
@@ -126,8 +92,42 @@ struct board {
                 }
             }
         }
-        
+
         return false;
+    }
+
+    /**
+     * Performs a merge to the left, in the same way as traditional 2048.
+     * @param line the line of values in question
+     * @param moved reference to store if any movement has been made
+     * @return number of merges that happened
+     */
+    int merge_line(std::array<int, 4> &line, bool &moved) {
+        std::array<int, 4> tmp{};
+        int count = 0;
+        for (int i = 0; i < 4; i++) {
+            if (line[i]) tmp[count++] = line[i];
+        }
+
+        moved |= tmp != line;
+ 
+        std::array<int, 4> result{};
+        int merges = 0;
+        int ptr = 0;
+        for (int i = 0; i < count; ) {
+            if (i + 1 < count && tmp[i] == tmp[i + 1]) {
+                result[ptr++] = tmp[i] * 2;
+                score += tmp[i] * 2;
+                merges++;
+                i += 2;
+                moved = true;
+            } else {
+                result[ptr++] = tmp[i++];
+            }
+        }
+ 
+        line = std::move(result);
+        return merges;
     }
 
     /**
@@ -180,6 +180,7 @@ struct board {
     void add_tile(const std::pair<int, int> &tile) {
         const auto &[loc, val] = tile;
         int i = loc >> 2, j = loc & 3;
+        assert(grid[i][j] == 0);
         grid[i][j] = val;
         has_adj |= i && val == grid[i - 1][j];
         has_adj |= i + 1 < 4 && val == grid[i + 1][j];

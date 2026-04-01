@@ -16,6 +16,11 @@ struct mcts {
         state.add_tile(state.gen_tile());
     }
 
+    mcts(int max_rollouts) : root(std::make_unique<node>()), state(), num_rollouts(0) {
+        state.add_tile(state.gen_tile());
+        state.add_tile(state.gen_tile());
+    }
+
     /**
      * @return a random value in the range [0, bound], provided bound >= 0
      */

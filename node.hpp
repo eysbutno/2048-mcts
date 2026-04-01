@@ -3,8 +3,8 @@
 #include <cmath>
 
 struct node {
-    static constexpr double C = 0.3;
-    static constexpr double INF = 1e9;
+    static constexpr long double C = 0.01;
+    static constexpr long double INF = 1e9;
 
     long double q;
     int n;
@@ -30,6 +30,6 @@ struct node {
 
     long double value() const {
         if (n == 0) return INF;
-        return q / n + C * std::sqrt(std::log(par->n) / n);
+        return q / n + C * std::sqrt(std::log((long double) par->n) / n);
     }
 };
