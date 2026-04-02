@@ -152,6 +152,7 @@ struct bitboard {
             }
 
             if (idx == 0) break;
+            x >>= 4;
             idx--;
             res++;
         }
@@ -248,6 +249,6 @@ struct bitboard {
 
     static board_t to_tile(int hash) {
         int ind = hash % 4;
-        return board_t(ind) << (hash / 4);
+        return board_t(ind) << (hash - ind);
     }
 };
