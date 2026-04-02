@@ -138,6 +138,27 @@ struct bitboard {
         return tile;
     }
 
+    int gen_tile_idx() const {
+        board_t x = mask;
+        int idx = x == 0 ? 16 : count_open(x);
+        assert(idx > 0);
+        idx = get_rand(idx);
+
+        int res = 0;
+        while (true) {
+            while ((x & 0xF) != 0) {
+                res++;
+                x >>= 4;
+            }
+
+            if (idx == 0) break;
+            idx--;
+            res++;
+        }
+
+        return res * 4 + (get_rand(10) < 9 ? 1 : 2);
+    }
+
     void play_tile(board_t tile) {
         mask ^= tile;
     }
@@ -222,6 +243,11 @@ struct bitboard {
     }
 
     static board_t tile_repr(int r, int c, int v) {
-        return (board_t) v << (4 * (r * 4 + c));
+        return board_t(v) << (4 * (r * 4 + c));
+    }
+
+    static board_t to_tile(int hash) {
+        int ind = hash % 4;
+        return board_t(ind) << (hash / 4);
     }
 };

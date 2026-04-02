@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
             solver.play_move(move);
             moves++;
         } else {
-            solver.play_tile(solver.state.gen_tile());
+            solver.play_tile(solver.state.gen_tile_idx());
         }
 
         is_chance = !is_chance;

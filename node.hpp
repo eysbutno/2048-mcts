@@ -1,7 +1,6 @@
 #include <vector>
 #include <memory>
 #include <cmath>
-#include "bitboard.hpp"
 
 struct node {
     static constexpr long double C = 0.01;
@@ -10,23 +9,20 @@ struct node {
     long double q;
     int n;
     bool is_chance;
-    bitboard::board_t move;
     std::vector<std::unique_ptr<node>> ch;
     node* par;
 
-    node() : q(0), n(0), is_chance(true), move(-1), ch(), par(nullptr) {}
+    node() : q(0), n(0), is_chance(true), ch(), par(nullptr) {}
 
-    node(bool _is_chance, bitboard::board_t _move, node* _par) 
-        : q(0), n(0), is_chance(_is_chance), move(_move), ch(), par(_par) {
-        if (is_chance) {
-            ch.reserve(32);
-        } else {
-            ch.reserve(4);
-        }
+    node(bool _is_chance, node* _par) 
+        : q(0), n(0), is_chance(_is_chance), ch(), par(_par) {}
+
+    void alloc() {
+        is_chance ? ch.resize(4) : ch.resize(64);
     }
 
-    void add_ch(bool is_chance, bitboard::board_t move) {
-        ch.push_back(std::make_unique<node>(is_chance, move, this));
+    void add_ch(int idx, bool is_chance) {
+        ch[idx] = std::make_unique<node>(is_chance, this);
     }
 
     long double value() const {
