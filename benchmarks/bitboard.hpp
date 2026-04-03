@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cassert>
 #include <array>
+#include "config.hpp"
 
 struct bitboard {
     using board_t = uint64_t;
@@ -268,9 +269,8 @@ struct bitboard {
         return score;
     }
 
-    static int heuristic(board_t x) {
-        static constexpr int EMPTY_SHIFT = 20; 
-        return monotonicity(x) + (count_open(x) << EMPTY_SHIFT);
+    static double heuristic(board_t x) {
+        return monotonicity(x) * config::MONO_WT + count_open(x) * config::OPEN_WT;
     }
 
     directions gen_heuristic_move() const {
