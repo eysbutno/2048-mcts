@@ -100,7 +100,8 @@ struct mcts {
         while (!b.terminal()) {
             if (is_chance) {
                 // transition to a decision node
-                b.play_move(b.gen_move());
+                // b.play_move(b.gen_move());
+                b.play_move(b.gen_heuristic_move());
             } else {
                 // transition to a randomly generated tile
                 b.play_tile(b.gen_tile());

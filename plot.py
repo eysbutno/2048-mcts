@@ -26,11 +26,12 @@ Expected stdout per run (current format):
 """
  
 import subprocess
-import re
 import time
 import sys
+import threading
 from pathlib import Path
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
  
 import numpy as np
 import matplotlib.pyplot as plt
@@ -39,10 +40,11 @@ from matplotlib.gridspec import GridSpec
  
 # ── Configuration ─────────────────────────────────────────────────────────────
  
-EXECUTABLE   = "./run.exe"          # path to compiled binary
-ROLLOUT_COUNTS = [100, 250, 500, 1000]  # rollouts to benchmark
-RUNS_PER_LEVEL = 10                     # games per rollout count
-TIMEOUT_SEC    = 600                   # kill a run after this many seconds
+EXECUTABLE     = "./run.exe"        # path to compiled binary
+ROLLOUT_COUNTS = [10000]            # rollouts to benchmark
+RUNS_PER_LEVEL = 20                 # games per rollout count
+TIMEOUT_SEC    = 600                # kill a run after this many seconds
+MAX_WORKERS    = 12                 # parallel games to run at once
  
 # ── Parsing ────────────────────────────────────────────────────────────────────
  
@@ -71,10 +73,13 @@ def parse_output(stdout: str) -> dict | None:
         return None
  
 # ── Runner ─────────────────────────────────────────────────────────────────────
- 
+
+_print_lock = threading.Lock()
+
 def run_game(rollouts: int, run_idx: int, total: int) -> dict | None:
     label = f"rollouts={rollouts} run {run_idx+1}/{total}"
-    print(f"  {label} ...", end=" ", flush=True)
+    with _print_lock:
+        print(f"  {label} ...", end=" ", flush=True)
     t0 = time.perf_counter()
     try:
         proc = subprocess.run(
@@ -84,31 +89,46 @@ def run_game(rollouts: int, run_idx: int, total: int) -> dict | None:
         )
         elapsed = time.perf_counter() - t0
         result = parse_output(proc.stdout)
-        if result:
-            print(f"score={result['score']:,}  max_tile={result['max_tile']}  ({elapsed:.1f}s)")
-        else:
-            print(f"PARSE ERROR  stderr: {proc.stderr[:80]}")
+        with _print_lock:
+            if result:
+                print(f"score={result['score']:,}  max_tile={result['max_tile']}  ({elapsed:.1f}s)")
+            else:
+                print(f"PARSE ERROR  stderr: {proc.stderr[:80]}")
         return result
     except subprocess.TimeoutExpired:
-        print(f"TIMEOUT after {TIMEOUT_SEC}s")
+        with _print_lock:
+            print(f"TIMEOUT after {TIMEOUT_SEC}s")
         return None
     except FileNotFoundError:
-        print(f"\nERROR: executable '{EXECUTABLE}' not found.")
+        with _print_lock:
+            print(f"\nERROR: executable '{EXECUTABLE}' not found.")
         sys.exit(1)
  
 def run_benchmark() -> dict[int, list[dict]]:
     results: dict[int, list[dict]] = defaultdict(list)
     total = len(ROLLOUT_COUNTS) * RUNS_PER_LEVEL
     done  = 0
+    done_lock = threading.Lock()
+
     for rollouts in ROLLOUT_COUNTS:
-        print(f"\n── Rollouts = {rollouts} ──────────────────────────")
-        for i in range(RUNS_PER_LEVEL):
-            r = run_game(rollouts, i, RUNS_PER_LEVEL)
-            if r:
-                r["rollouts"] = rollouts
-                results[rollouts].append(r)
-            done += 1
-            print(f"  Progress: {done}/{total} games completed", flush=True)
+        print(f"\n── Rollouts = {rollouts} (workers={MAX_WORKERS}) ──────────────────────────")
+
+        futures_map = {}
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            for i in range(RUNS_PER_LEVEL):
+                future = executor.submit(run_game, rollouts, i, RUNS_PER_LEVEL)
+                futures_map[future] = i
+
+            for future in as_completed(futures_map):
+                r = future.result()
+                if r:
+                    r["rollouts"] = rollouts
+                    results[rollouts].append(r)
+                with done_lock:
+                    done += 1
+                    with _print_lock:
+                        print(f"  Progress: {done}/{total} games completed", flush=True)
+
     return results
  
 # ── Plotting ───────────────────────────────────────────────────────────────────
@@ -221,7 +241,6 @@ def plot_all(results: dict[int, list[dict]]):
         freqs = []
         for k in rollout_levels:
             scores_k = results[k]
-            # exact bucket: max_tile == tile_val
             pct = 100 * sum(1 for r in scores_k if r["max_tile"] == tile_val) / max(len(scores_k), 1)
             freqs.append(pct)
         if any(f > 0 for f in freqs):
@@ -238,7 +257,7 @@ def plot_all(results: dict[int, list[dict]]):
     ax_tile.legend(fontsize=7.5, framealpha=0.2, labelcolor="white",
                    facecolor="#1a1a24", edgecolor="#333348", ncol=2)
     ax_tile.grid(axis="y", alpha=0.15, color="#4444aa", linestyle="--")
-    ax_tile.set_ylim(0, 105)  # always 100% now, fixed
+    ax_tile.set_ylim(0, 105)
  
     # ── Save ──────────────────────────────────────────────────────────────────
     out = Path("mcts_benchmark.png")
@@ -271,6 +290,7 @@ if __name__ == "__main__":
     print(f"  Executable : {EXECUTABLE}")
     print(f"  Rollouts   : {ROLLOUT_COUNTS}")
     print(f"  Runs/level : {RUNS_PER_LEVEL}")
+    print(f"  Workers    : {MAX_WORKERS}")
     print(f"  Total games: {len(ROLLOUT_COUNTS) * RUNS_PER_LEVEL}")
     print()
  
@@ -278,7 +298,6 @@ if __name__ == "__main__":
         (Path(p) / EXECUTABLE.lstrip("./")).exists()
         for p in ["."] + sys.path
     ):
-        # Try to find it
         found = list(Path(".").glob("**/" + Path(EXECUTABLE).name))
         if found:
             EXECUTABLE = str(found[0])
@@ -292,4 +311,3 @@ if __name__ == "__main__":
     results = run_benchmark()
     print_summary(results)
     plot_all(results)
- 

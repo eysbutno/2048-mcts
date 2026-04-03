@@ -102,7 +102,7 @@ struct bitboard {
         board_t a1 = x & 0xF0F00F0FF0F00F0FULL;
         board_t a2 = x & 0x0000F0F00000F0F0ULL;
         board_t a3 = x & 0x0F0F00000F0F0000ULL;
-        board_t a = a1 | (a2 << 12) | (a3 >> 12);
+        board_t a  = a1 | (a2 << 12) | (a3 >> 12);
         board_t b1 = a & 0xFF00FF0000FF00FFULL;
         board_t b2 = a & 0x00FF00FF00000000ULL;
         board_t b3 = a & 0x00000000FF00FF00ULL;
@@ -226,6 +226,24 @@ struct bitboard {
         }
 
         return NONE;
+    }
+
+    directions gen_heuristic_move() const {
+        static constexpr int EMPTY_SHIFT = 8;
+        directions best = NONE;
+        int prev = 0;
+        for (int i = 0; i < 4; i++) {
+            bitboard cpy = *this;
+            if (cpy.play_move((directions) i)) {
+                int eval = cpy.score + (count_open(cpy.mask) << EMPTY_SHIFT);
+                if (eval > prev) {
+                    best = (directions) i;
+                    prev = eval;
+                }
+            }
+        }
+
+        return best;
     }
 
     bool terminal() const {

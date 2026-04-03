@@ -3,7 +3,7 @@
 #include <cmath>
 
 struct node {
-    static constexpr long double C = 0.01;
+    static constexpr long double C = 0.1;
     static constexpr long double INF = 1e9;
 
     long double q;
