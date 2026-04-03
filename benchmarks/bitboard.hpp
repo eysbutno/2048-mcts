@@ -135,7 +135,7 @@ struct bitboard {
     }
 
     static int get_rand(int bound) {
-        static std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
+        static thread_local std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
         assert(bound > 0);
         return std::uniform_int_distribution<int>(0, bound - 1)(rng);
     }

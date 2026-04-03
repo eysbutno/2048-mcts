@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cassert>
 #include <array>
+#include "config.hpp"
 
 struct bitboard {
     using board_t = uint64_t;
@@ -134,7 +135,7 @@ struct bitboard {
     }
 
     static int get_rand(int bound) {
-        static std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
+        static thread_local std::mt19937 rng{(uint32_t)std::chrono::steady_clock::now().time_since_epoch().count()};
         assert(bound > 0);
         return std::uniform_int_distribution<int>(0, bound - 1)(rng);
     }
@@ -269,8 +270,7 @@ struct bitboard {
     }
 
     static int heuristic(board_t x) {
-        static constexpr int EMPTY_SHIFT = 20; 
-        return monotonicity(x) + (count_open(x) << EMPTY_SHIFT);
+        return monotonicity(x) * config::MONO_WT + count_open(x) * config::OPEN_WT;
     }
 
     directions gen_heuristic_move() const {

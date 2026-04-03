@@ -1,9 +1,9 @@
 #include <vector>
 #include <memory>
 #include <cmath>
+#include "config.hpp"
 
 struct node {
-    static constexpr long double C = 0.1;
     static constexpr long double INF = 1e9;
 
     long double q;
@@ -27,6 +27,6 @@ struct node {
 
     long double value() const {
         if (n == 0) return INF;
-        return q / n + C * std::sqrt(std::log((long double) par->n) / n);
+        return q / n + config::C * std::sqrt(std::log((long double) par->n) / n);
     }
 };
