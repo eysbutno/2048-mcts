@@ -80,29 +80,70 @@ struct bitboard {
     static inline const auto scores_left = precompute_table(TABLE_LEFT_SCORE);
     static inline const auto scores_right = precompute_table(TABLE_RIGHT_SCORE);
 
-    static const std::array<int, 1 << 16> precompute_monotonicity_table() {
-        std::array<int, 1 << 16> res{};
+    static const std::array<float, 1 << 16> precompute_heuristic_table() {
+        std::array<float, 1 << 16> res{};
+
         for (int i = 0; i < (1 << 16); i++) {
-            int tiles[4] = {
-                i & 0xF, (i >> 4) & 0xF, (i >> 8) & 0xF, (i >> 12) & 0xF
+            int line[4] = {
+                (i >> 0) & 0xF,
+                (i >> 4) & 0xF,
+                (i >> 8) & 0xF,
+                (i >> 12) & 0xF
             };
 
-            int left = 0, right = 0;
-            for (int j = 0; j < 3; j++) {
-                if (tiles[j] == 0 || tiles[j + 1] == 0) continue;
-                if (tiles[j] > tiles[j + 1]) {
-                    left += (1 << tiles[j]) - (1 << tiles[j + 1]);
-                } else if (tiles[j + 1] > tiles[j]) {
-                    right += (1 << tiles[j + 1]) - (1 << tiles[j]);
+            float sum = 0.0f;
+            int empty = 0;
+            int merges = 0;
+
+            int prev = 0;
+            int counter = 0;
+
+            for (int j = 0; j < 4; j++) {
+                int rank = line[j];
+
+                sum += std::pow((float)rank, config::SCORE_SUM_POWER);
+
+                if (rank == 0) {
+                    empty++;
+                } else {
+                    if (prev == rank) {
+                        counter++;
+                    } else {
+                        if (counter > 0) {
+                            merges += 1 + counter;
+                            counter = 0;
+                        }
+                    }
+                    prev = rank;
                 }
             }
 
-            res[i] = -std::min(left, right);
+            if (counter > 0) merges += 1 + counter;
+
+            float mono_left = 0.0f, mono_right = 0.0f;
+
+            for (int j = 1; j < 4; j++) {
+                if (line[j - 1] > line[j]) {
+                    mono_left += std::pow((float)line[j - 1], config::SCORE_MONOTONICITY_POWER)
+                               - std::pow((float)line[j], config::SCORE_MONOTONICITY_POWER);
+                } else {
+                    mono_right += std::pow((float)line[j], config::SCORE_MONOTONICITY_POWER)
+                                - std::pow((float)line[j - 1], config::SCORE_MONOTONICITY_POWER);
+                }
+            }
+
+            res[i] =
+                config::SCORE_LOST_PENALTY
+                + config::SCORE_EMPTY_WEIGHT * empty
+                + config::SCORE_MERGES_WEIGHT * merges
+                - config::SCORE_MONOTONICITY_WEIGHT * std::min(mono_left, mono_right)
+                - config::SCORE_SUM_WEIGHT * sum;
         }
+
         return res;
     }
 
-    static inline const auto mono_table = precompute_monotonicity_table();
+    static inline const auto heur_table = precompute_heuristic_table();
 
     board_t mask;
     int score;
@@ -254,33 +295,27 @@ struct bitboard {
         return NONE;
     }
 
-    static int monotonicity(board_t x) {
-        int score = 0;
+    static float heuristic(bitboard b) {
+        static auto eval = [](board_t x) {
+            float score = 0;
+            for (int t = 0; t < 4; t++) {
+                score += heur_table[(x >> (t * 16)) & ROW_MASK];
+            }
+            
+            return score;
+        };
 
-        for (int t = 0; t < 4; t++) {
-            score += mono_table[(x >> (t * 16)) & ROW_MASK];
-        }
-
-        board_t tx = transpose(x);
-        for (int t = 0; t < 4; t++) {
-            score += mono_table[(tx >> (t * 16)) & ROW_MASK];
-        }
-
-        return score;
-    }
-
-    static int heuristic(board_t x) {
-        return monotonicity(x) * config::MONO_WT + count_open(x) * config::OPEN_WT;
+        return eval(b.mask) + eval(transpose(b.mask));
     }
 
     directions gen_heuristic_move() const {
         directions best = NONE;
-        int prev = INT_MIN;
+        float prev = -1e9;
         
         for (int i = 0; i < 4; i++) {
             bitboard cpy = *this;
             if (cpy.play_move((directions) i)) {
-                int eval = heuristic(cpy.mask);
+                float eval = heuristic(cpy);
                 if (eval > prev) {
                     best = (directions) i;
                     prev = eval;
