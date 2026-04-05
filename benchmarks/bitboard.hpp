@@ -269,8 +269,9 @@ struct bitboard {
         return score;
     }
 
-    static double heuristic(board_t x) {
-        return monotonicity(x) * config::MONO_WT + count_open(x) * config::OPEN_WT;
+    static double heuristic(bitboard x) {
+        return monotonicity(x.mask) * config::MONO_WT + count_open(x.mask) * config::OPEN_WT 
+             + x.score * config::SUM_WT;
     }
 
     directions gen_heuristic_move() const {
@@ -280,7 +281,7 @@ struct bitboard {
         for (int i = 0; i < 4; i++) {
             bitboard cpy = *this;
             if (cpy.play_move((directions) i)) {
-                int eval = heuristic(cpy.mask);
+                int eval = heuristic(cpy);
                 if (eval > prev) {
                     best = (directions) i;
                     prev = eval;
